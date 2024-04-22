@@ -21,7 +21,7 @@ repository               : "Xiangqiwang77.github.io/mainpage"
 #               Additional customization can be done by editing /_includes/author-profile.html
 author:
   # Biographic information
-  avatar           : "profile.png"
+  avatar           : "profile.jpg"
   name             : "Xiangqi Wang"
   pronouns         : # example: "she/her"  
   bio              : "Incoming CSE PhD student @ ND"
