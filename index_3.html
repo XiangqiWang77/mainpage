@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Florida State Map</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    
+    <!-- 引入 Neo4j JavaScript 驱动 -->
+    <script src="https://cdn.jsdelivr.net/npm/neo4j-driver"></script>
+    
+    <!-- Bootstrap CSS for modal styling -->
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        /* 全屏显示地图 */
+        body, html {
+            height: 100%;
+            margin: 0;
+        }
+        #map {
+            height: 100vh; /* 设置地图高度为视口高度 */
+            width: 100%;
+        }
+        .modal-header { background-color: #007bff; color: white; }
+        .modal-body { max-height: 400px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+
+    <!-- Modal to display entities -->
+    <div class="modal fade" id="entityModal" tabindex="-1" role="dialog" aria-labelledby="entityModalLabel" aria-hidden="true">
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="entityModalLabel">Entities for <span id="modal-county-name"></span></h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+          <div class="modal-body">
+            <ul id="entity-list" class="list-group"></ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    
+    <!-- Bootstrap JS for modal functionality -->
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.3/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+
+    <script>
+        var map = L.map('map').setView([27.9944024, -81.7602544], 7);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: 'Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        map.on('click', function(e) {
+            var lat = e.latlng.lat;
+            var lng = e.latlng.lng;
+
+            getCountyFromLatLng(lat, lng).then(countyName => {
+                document.getElementById('modal-county-name').innerText = countyName;
+
+                // 查询 Neo4j 数据库
+                queryNeo4jForEntities(countyName).then(entities => {
+                    displayEntities(entities);
+                    // 显示模态框
+                    $('#entityModal').modal('show');
+                });
+            });
+        });
+
+        async function getCountyFromLatLng(lat, lng) {
+            const response = await fetch(`https://geo.fcc.gov/api/census/block/find?latitude=${lat}&longitude=${lng}&format=json`);
+            const data = await response.json();
+            let countyName = data.County.name.trim();
+            console.log("Formatted County name:", countyName);
+            return countyName;
+        }
+
+        async function queryNeo4jForEntities(countyName) {
+            const driver = neo4j.driver('bolt://localhost:7687', neo4j.auth.basic('neo4j', '12345678'));
+            const session = driver.session();
+
+            try {
+                const result = await session.run(
+                    `MATCH (c:Location {name: $countyName})-[]-(e) RETURN e.name AS entityName, e.wikidata_id AS wikidataId`,
+                    { countyName: countyName }
+                );
+
+                return result.records.map(record => ({
+                    name: record.get('entityName'),
+                    wikidataId: record.get('wikidataId')
+                }));
+            } finally {
+                await session.close();
+                await driver.close();
+            }
+        }
+
+        function displayEntities(entities) {
+            const entityList = document.getElementById('entity-list');
+            entityList.innerHTML = ''; // 清空之前的结果
+
+            if (entities.length === 0) {
+                const li = document.createElement('li');
+                li.textContent = "No entities found for this county.";
+                li.classList.add('list-group-item');
+                entityList.appendChild(li);
+            } else {
+                entities.forEach(entity => {
+                    const li = document.createElement('li');
+                    li.classList.add('list-group-item');
+
+                    // 创建指向Wikidata的链接
+                    const link = document.createElement('a');
+                    link.href = `https://www.wikidata.org/wiki/${entity.wikidataId}`;
+                    link.target = '_blank';
+                    link.textContent = entity.name;
+
+                    li.appendChild(link);
+                    entityList.appendChild(li);
+                });
+            }
+        }
+    </script>
+</body>
+</html>
